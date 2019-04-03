@@ -14,6 +14,7 @@ from imgaug import augmenters as iaa
 
 # sys.path.append(pathlib.Path(__file__).parent)
 from dataset import *
+import metrics
 
 
 def create_seq():
@@ -52,13 +53,14 @@ def create_seq():
 
 
 def create_callbacks(dataset, name_weights, patience_lr=10, patience_es=150):
-    mcp_save = ModelCheckpoint('tmp.weights.best.hdf5', save_best_only=True, monitor='val_loss', mode='min')
+    mcp_save = ModelCheckpoint('model/validate.weights.best.hdf5', save_best_only=True, monitor='val_loss')
+    # history = metrics.Histories(dataset)
     # mcp_save = AllModelCheckpoint(name_weights)
     # reduce_lr_loss = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=patience_lr, verbose=1, min_delta=1e-4, mode='min')
     # early_stopping = EarlyStopping(monitor='val_loss', patience=patience_es, verbose=1, mode='auto')
     # return [early_stopping, mcp_save, reduce_lr_loss]
     # return [f1metrics, early_stopping, mcp_save]
-    return [mcp_save, dataset]
+    return [dataset, mcp_save]
 
 
 def load_dataset(filename):
@@ -110,8 +112,8 @@ def train_model(model: Model, dataset, model_filename: str,
     answers = [data_unit.answer for data_unit in dataset.data_list]
     sample_num = len(answers)
     # sample_num = len(answers)
-    train_num = int(sample_num * TRAIN_RATIO * 0.05)
-    validate_num = int(sample_num * VALIDATE_RATIO * 0.05)
+    train_num = int(sample_num * TRAIN_RATIO)
+    validate_num = int(sample_num * VALIDATE_RATIO)
     steps_per_epoch = train_num // batch_size
     # steps_per_epoch = 50
     validation_steps = validate_num // batch_size

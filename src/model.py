@@ -27,10 +27,11 @@ from keras.engine.topology import Input
 from keras.layers import Activation, Add, BatchNormalization, Concatenate, Conv2D, Dense, Flatten, GlobalMaxPooling2D, \
     Lambda, MaxPooling2D, Reshape
 from keras.models import Model
+import resnet152_keras
 
 from dataset import *
 from train_utils import *
-from metrics import MacroF1Score
+import metrics
 
 
 def elu(x, alpha=0.05):
@@ -42,6 +43,7 @@ def create_model_resnet50_plain(dataset: Dataset, input_shape, dropout=0.3, data
     loss: 0.2251 - acc: 0.9082 - val_loss: 0.3021 - val_acc: 0.8824 test auc: 0.5168897947617596
     loss: 0.2697 - acc: 0.8866 - val_loss: 0.3675 - val_acc: 0.8455 roc_auc_score:0.9416684622566974
     loss: 0.1372 - acc: 0.9447 - val_loss: 0.3733 - val_acc: 0.8818 roc_auc_score:0.9762951119646599 0.9429
+    loss: 0.1521 - acc: 0.9437 - val_loss: 0.4059 - val_acc: 0.8745 roc_auc_score:0.9784811242370994 0.9543
     Function creating the model's graph in Keras.
     Argument:
     input_shape -- shape of the model's input data (using Keras conventions)
@@ -66,14 +68,21 @@ def create_model_resnet50_plain(dataset: Dataset, input_shape, dropout=0.3, data
 
 def create_model_resnet152_plain(dataset: Dataset, input_shape, dropout=0.5, datatype: DataType = DataType.train):
     """
-    Function creating the model's graph in Keras.
+    loss: 0.1779 - acc: 0.9319 - auc: 0.9590 - val_loss: 0.1822 - val_acc: 0.9323 - val_auc: 0.9594 roc_auc_score:0.9878727174983859 test:0.9662
     Argument:
     input_shape -- shape of the model's input data (using Keras conventions)
     Returns:
     model -- Keras model instance
     """
-    model = ResNet(input_shape, activation='sigmoid', classes=1,
-                   repetitions=[3, 8, 36, 3], include_top=True)
+    base_model = resnet152_keras.resnet152_model()
+    out1 = GlobalMaxPooling2D()(base_model.layers[-3].output)
+    out2 = GlobalAveragePooling2D()(base_model.layers[-3].output)
+    out3 = Flatten()(base_model.layers[-3].output)
+    out = Concatenate(axis=-1)([out1, out2, out3])
+    if datatype != DataType.test:
+        out = Dropout(dropout)(out)
+    x = Dense(1, activation="sigmoid")(out)
+    model = Model(inputs=[base_model.input], outputs=[x])
     model.summary()
     return model
 
@@ -91,10 +100,14 @@ def create_model_inceptionresnetv2_plain(dataset: Dataset, input_shape, dropout=
     """
     base_input = Input(shape=input_shape)
     base_model = InceptionResNetV2(weights='imagenet', include_top=False, input_tensor=base_input, pooling=None)
-    x = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    # x = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    out1 = GlobalMaxPooling2D()(base_model.layers[-1].output)
+    out2 = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    out3 = Flatten()(base_model.layers[-1].output)
+    out = Concatenate(axis=-1)([out1, out2, out3])
     if datatype != DataType.test:
-        x = Dropout(dropout)(x)
-    x = Dense(1, activation='sigmoid')(x)
+        out = Dropout(dropout)(out)
+    x = Dense(1, activation="sigmoid")(out)
     model = Model(inputs=[base_model.input], outputs=[x])
     model.summary()
     return model
@@ -105,17 +118,16 @@ def create_model_nasnet(dataset: Dataset, input_shape, dropout=0.5,
     # loss: 0.3772 - acc: 0.9286 - val_loss: 0.6968 - val_acc: 0.8291 roc_auc_score:0.9395888617041388 0.8966
     # loss: 0.4615 - acc: 0.9066 - val_loss: 0.7080 - val_acc: 0.8309 roc_auc_score:0.934900486
     # loss: 0.4558 - acc: 0.9053 - val_loss: 0.6908 - val_acc: 0.8309 roc_auc_score:0.9408894702510078 0.8956
-    inputs = Input(input_shape)
-    base_model = NASNetMobile(include_top=False, input_shape=input_shape)  # , weights=None
-    x = base_model(inputs)
-    out1 = GlobalMaxPooling2D()(x)
-    out2 = GlobalAveragePooling2D()(x)
-    out3 = Flatten()(x)
+    base_input = Input(input_shape)
+    base_model = NASNetMobile(weights='imagenet', include_top=False, input_tensor=base_input)  # , weights=None
+    out1 = GlobalMaxPooling2D()(base_model.layers[-1].output)
+    out2 = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    out3 = Flatten()(base_model.layers[-1].output)
     out = Concatenate(axis=-1)([out1, out2, out3])
-    out = Dropout(dropout)(out)
-    out = Dense(1, activation="sigmoid", name="3_")(out)
-    model = Model(inputs, out)
-    # model.compile(optimizer=Adam(0.0001), loss=binary_crossentropy, metrics=['acc'])
+    if datatype != DataType.test:
+        out = Dropout(dropout)(out)
+    x = Dense(1, activation="sigmoid")(out)
+    model = Model(inputs=[base_model.input], outputs=[x])
     model.summary()
     return model
 
@@ -129,13 +141,56 @@ def create_model_mobilenet(dataset: Dataset, input_shape, dropout=0.5, datatype:
     Returns:
     model -- Keras model instance
     """
-    base_input = Input(shape=input_shape)
-    base_model = MobileNetV2(weights='imagenet', include_top=False, input_tensor=base_input, pooling=None)
-    x = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    inputs = Input(shape=input_shape)
+    base_model = MobileNetV2(weights='imagenet', include_top=False, input_tensor=input_shape, pooling=None)
+    x = base_model(inputs)
+    out1 = GlobalMaxPooling2D()(base_model.layers[-1].output)
+    out2 = GlobalAveragePooling2D()(base_model.layers[-1].output)
+    out3 = Flatten()(base_model.layers[-1].output)
+    out = Concatenate(axis=-1)([out1, out2, out3])
     if datatype != DataType.test:
-        x = Dropout(dropout)(x)
-    x = Dense(dataset.class_num, activation='softmax')(x)
+        out = Dropout(dropout)(out)
+    x = Dense(1, activation="sigmoid")(out)
     model = Model(inputs=[base_model.input], outputs=[x])
+    model.summary()
+    return model
+
+
+def create_model_ensemble(dataset: Dataset, input_shape, dropout=0.5, datatype: DataType = DataType.train):
+    base_input = Input(input_shape)
+
+    def create_resnet_sub(img_input):
+        base_model = resnet152_keras.resnet152_model(img_input=img_input)
+        o1 = GlobalMaxPooling2D()(base_model.layers[-3].output)
+        o2 = GlobalAveragePooling2D()(base_model.layers[-3].output)
+        o3 = Flatten()(base_model.layers[-3].output)
+        o = Concatenate(axis=-1)([o1, o2, o3])
+        if datatype != DataType.test:
+            o = Dropout(dropout)(o)
+        x1 = Dense(1, activation="sigmoid")(o)
+        m = Model(inputs=[base_model.input], outputs=[x1])
+        m.load_weights('model/resnet152.weights.best.hdf5')
+        return o2
+
+    # resnet
+    resnet_model = ResNet50(weights='imagenet', include_top=False, input_tensor=base_input, pooling=None)
+    out1 = GlobalAveragePooling2D()(resnet_model.layers[-1].output)
+    # out1 = create_resnet_sub(base_input)
+
+    # inceptionresnetv2
+    incres_model = InceptionResNetV2(weights='imagenet', include_top=False, input_tensor=base_input, pooling=None)
+    out2 = GlobalAveragePooling2D()(incres_model.layers[-1].output)
+
+    # nasnet
+    nasnet_model = NASNetMobile(weights='imagenet', include_top=False, input_tensor=base_input)  # , weights=None
+    out3 = GlobalAveragePooling2D()(nasnet_model.layers[-1].output)
+
+    # ensemble
+    out = Concatenate(axis=-1)([out1, out2, out3])
+    if datatype != DataType.test:
+        out = Dropout(dropout)(out)
+    x = Dense(1, activation="sigmoid")(out)
+    model = Model(inputs=[base_input], outputs=[x])
     model.summary()
     return model
 
@@ -154,7 +209,7 @@ def build_model(model: Model, model_filename: str = None, learning_rate=0.00005)
         loss=keras.losses.binary_crossentropy,
         # loss=keras.losses.categorical_crossentropy,
         # loss=max_average_precision,
-        metrics=['acc'], )
+        metrics=['acc', metrics.auc, ], )
     # )
 
     return model

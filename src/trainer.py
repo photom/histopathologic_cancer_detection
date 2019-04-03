@@ -22,9 +22,10 @@ OUTPUT_FILE = 'test_dataset_prediction.txt'
 
 # BASE_MODEL = 'vgg19'
 # BASE_MODEL = 'incepstionresnetv2'
-BASE_MODEL = 'resnet50'
+# BASE_MODEL = 'resnet50'
 # BASE_MODEL = 'resnet152'
 # BASE_MODEL = 'nasnet'
+BASE_MODEL = 'ensemble'
 if BASE_MODEL == 'resnet50':
     create_model = create_model_resnet50_plain
 elif BASE_MODEL == 'resnet152':
@@ -35,6 +36,8 @@ elif BASE_MODEL == 'mobilenet':
     create_model = create_model_mobilenet
 elif BASE_MODEL == 'nasnet':
     create_model = create_model_nasnet
+elif BASE_MODEL == 'ensemble':
+    create_model = create_model_ensemble
 else:
     raise Exception("unimplemented model")
 
